@@ -1,0 +1,257 @@
+// TransTRACK Social Media Scheduler — data model
+// Multi-brand from day one (brand_id on every brand-scoped table) so that
+// LinkedIn and future Racik Digital client brands can be added without a
+// schema migration (PRD section 7 & 9).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth / people
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  memberships   Membership[]
+  createdPosts  Post[]        @relation("PostCreatedBy")
+  approvedPosts Post[]        @relation("PostApprovedBy")
+  notifications Notification[]
+  activities    PostActivity[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  CREATOR
+  APPROVER
+  VIEWER
+}
+
+// A user's role is scoped per brand, e.g. someone can be a Creator on
+// transtrack.co and a Viewer on transtrack.academy.
+model Membership {
+  id       String @id @default(cuid())
+  userId   String
+  brandId  String
+  role     Role
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, brandId])
+  @@index([brandId])
+  @@map("memberships")
+}
+
+// ---------------------------------------------------------------------------
+// Brands & connected social accounts
+// ---------------------------------------------------------------------------
+
+model Brand {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships    Membership[]
+  socialAccounts SocialAccount[]
+  posts          Post[]
+  assets         Asset[]
+
+  @@map("brands")
+}
+
+enum Platform {
+  INSTAGRAM
+  FACEBOOK
+  LINKEDIN
+}
+
+// One row per connected platform account for a brand (e.g. transtrack.co's
+// Instagram Business account, transtrack.co's Facebook Page). OAuth tokens
+// are per platform, per brand as required by PRD section 8.
+model SocialAccount {
+  id                String    @id @default(cuid())
+  brandId           String
+  platform          Platform
+  displayName       String
+  externalAccountId String // IG user id / FB page id / LinkedIn org urn
+  // Tokens are encrypted at rest with AES-256-GCM (lib/crypto.ts) before
+  // being written here — never store a plaintext token (PRD section 7).
+  accessTokenCipher String
+  tokenExpiresAt    DateTime?
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  brand   Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  targets PostTarget[]
+
+  @@unique([brandId, platform, externalAccountId])
+  @@index([brandId])
+  @@map("social_accounts")
+}
+
+// ---------------------------------------------------------------------------
+// Content
+// ---------------------------------------------------------------------------
+
+enum PostStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  REJECTED
+}
+
+model Post {
+  id            String     @id @default(cuid())
+  brandId       String
+  createdById   String
+  caption       String
+  status        PostStatus @default(DRAFT)
+  scheduledAt   DateTime?
+
+  approvedById  String?
+  approvedAt    DateTime?
+  rejectedNote  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand       Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  createdBy   User           @relation("PostCreatedBy", fields: [createdById], references: [id])
+  approvedBy  User?          @relation("PostApprovedBy", fields: [approvedById], references: [id])
+  media       PostMedia[]
+  targets     PostTarget[]
+  activities  PostActivity[]
+
+  @@index([brandId, status])
+  @@index([brandId, scheduledAt])
+  @@map("posts")
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+model PostMedia {
+  id       String    @id @default(cuid())
+  postId   String
+  url      String
+  type     MediaType
+  order    Int       @default(0)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@map("post_media")
+}
+
+enum PublishStatus {
+  PENDING
+  PUBLISHING
+  SUCCESS
+  FAILED
+}
+
+// One post can fan out to several platform accounts; each target tracks its
+// own publish status/errors independently (PRD section 7 reliability).
+model PostTarget {
+  id              String        @id @default(cuid())
+  postId          String
+  socialAccountId String
+  platform        Platform
+  publishStatus   PublishStatus @default(PENDING)
+  platformPostId  String?
+  errorMessage    String?
+  attempts        Int           @default(0)
+  publishedAt     DateTime?
+
+  post          Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
+
+  @@unique([postId, socialAccountId])
+  @@index([socialAccountId])
+  @@map("post_targets")
+}
+
+// Lightweight audit trail: created, submitted, approved, rejected,
+// published, failed — shown on the post detail view.
+model PostActivity {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String?
+  action    String
+  note      String?
+  createdAt DateTime @default(now())
+
+  post Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([postId])
+  @@map("post_activities")
+}
+
+// Reusable media library (PRD 6.4, phase 2) — modeled now since brand_id
+// scoping is cheap to add up front and posts will reference it later.
+model Asset {
+  id        String    @id @default(cuid())
+  brandId   String
+  url       String
+  type      MediaType
+  tags      String[]  @default([])
+  createdAt DateTime  @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+  @@map("assets")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  APPROVAL_REQUESTED
+  POST_APPROVED
+  POST_REJECTED
+  PUBLISH_FAILED
+  PUBLISH_SUCCESS
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  postId    String?
+  message   String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
