@@ -78,25 +78,43 @@ See `.env.example`. In short:
 - `CRON_SECRET` — shared secret Vercel Cron sends as a Bearer token; set the
   same value in the Vercel project's environment variables
 - `BLOB_READ_WRITE_TOKEN` — Vercel Blob store token
+- `META_APP_ID` / `META_APP_SECRET` — power the one-click "Connect with
+  Facebook" button (see below)
 
 ## Connecting Instagram & Facebook (Development Mode)
 
 The MVP targets Meta's **Development Mode** (no full App Review): only
-accounts added as Admins/Testers on the Meta app can be published to. Steps:
+accounts added as Admins/Testers on the Meta app can be published to.
+
+**One-time setup** (an Admin/developer does this once for the whole app):
 
 1. Create a Meta App at [developers.facebook.com](https://developers.facebook.com/).
 2. Add the **Instagram Graph API** and **Facebook Login for Business**
    products; add the TransTRACK Meta Business Suite admin as an app
    Admin/Tester.
-3. In [Graph API Explorer](https://developers.facebook.com/tools/explorer/),
-   generate a long-lived Page access token with
-   `pages_show_list, pages_read_engagement, pages_manage_posts,
-   instagram_basic, instagram_content_publish` permissions.
-4. Grab the **Page ID** (Facebook) and **Instagram Business Account ID**
-   linked to that Page.
-5. In SocialBoost, go to **Settings → Connected accounts** (Admin role) and
-   save the platform, display name, account/Page ID, and access token — it's
-   encrypted before it's stored.
+3. Under **Settings → Basic**, copy the **App ID** and **App Secret** into
+   `META_APP_ID` / `META_APP_SECRET`.
+4. Under **Facebook Login → Settings → Valid OAuth Redirect URIs**, add:
+   - `http://localhost:3000/api/auth/meta/callback` (local dev)
+   - `https://<your-production-domain>/api/auth/meta/callback`
+
+**Connecting a Page** (any Admin of a brand in SocialBoost can do this,
+anytime — no developer needed):
+
+1. Go to **Settings → Connected accounts** and click **Connect with
+   Facebook**.
+2. Log in with the Facebook account that manages the brand's Page(s), and
+   pick which Page(s) to allow.
+3. SocialBoost automatically saves each Page as a Facebook connection, and,
+   if it has a linked Instagram Business account, that too — encrypted
+   before it's stored. No copying IDs or tokens by hand.
+
+If the one-click button isn't available (e.g. `META_APP_ID` isn't set
+yet), the same page has a manual fallback: paste in a Page ID / IG
+Business Account ID and a long-lived access token generated from
+[Graph API Explorer](https://developers.facebook.com/tools/explorer/)
+with the `pages_show_list, pages_read_engagement, pages_manage_posts,
+instagram_basic, instagram_content_publish` permissions.
 
 Instagram publishing requires a **public** media URL (Vercel Blob URLs work)
 and only supports single image/video posts in this MVP — matching the PRD's

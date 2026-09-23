@@ -136,6 +136,113 @@ export async function publishToFacebook(
   }
 }
 
+// ---------------------------------------------------------------------------
+// "Connect with Facebook" login — lets an Admin approve access with one
+// click instead of typing in a Page ID and access token by hand. Meta's
+// docs: https://developers.facebook.com/docs/facebook-login/guides/access-tokens
+// ---------------------------------------------------------------------------
+
+const META_LOGIN_SCOPES = [
+  "pages_show_list",
+  "pages_read_engagement",
+  "pages_manage_posts",
+  "instagram_basic",
+  "instagram_content_publish",
+].join(",");
+
+function requireMetaAppId(): string {
+  const id = process.env.META_APP_ID;
+  if (!id) throw new Error("META_APP_ID is not set.");
+  return id;
+}
+
+function requireMetaAppSecret(): string {
+  const secret = process.env.META_APP_SECRET;
+  if (!secret) throw new Error("META_APP_SECRET is not set.");
+  return secret;
+}
+
+// Builds the link that sends someone to Facebook's own login + permission
+// screen. `state` is a one-time code we hand back to ourselves afterwards,
+// to prove the person coming back is the same one who left.
+export function buildMetaLoginUrl(redirectUri: string, state: string): string {
+  const url = new URL("https://www.facebook.com/v21.0/dialog/oauth");
+  url.searchParams.set("client_id", requireMetaAppId());
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("state", state);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", META_LOGIN_SCOPES);
+  return url.toString();
+}
+
+// Facebook's login screen hands us a short-lived, one-time "code" — this
+// trades it for an access token we can actually use.
+async function exchangeCodeForUserToken(code: string, redirectUri: string): Promise<string> {
+  const json = await graphGet("/oauth/access_token", {
+    client_id: requireMetaAppId(),
+    client_secret: requireMetaAppSecret(),
+    redirect_uri: redirectUri,
+    code,
+  });
+  return json.access_token as string;
+}
+
+// The token from the step above expires in about an hour. Trading it for a
+// long-lived one (~60 days) means the connection keeps working without
+// someone having to redo this every day.
+async function exchangeForLongLivedUserToken(shortLivedToken: string): Promise<string> {
+  const json = await graphGet("/oauth/access_token", {
+    grant_type: "fb_exchange_token",
+    client_id: requireMetaAppId(),
+    client_secret: requireMetaAppSecret(),
+    fb_exchange_token: shortLivedToken,
+  });
+  return json.access_token as string;
+}
+
+export type ConnectedPage = {
+  pageId: string;
+  pageName: string;
+  pageAccessToken: string;
+  /** Set only if this Facebook Page has an Instagram Business account linked. */
+  instagramBusinessAccountId: string | null;
+};
+
+// Lists every Facebook Page the person allowed us to see, plus which
+// Instagram account (if any) is linked to each one. Facebook's own login
+// screen is where the person actually picks which Pages to share — by the
+// time we call this, that choice has already been made.
+async function fetchConnectedPages(userAccessToken: string): Promise<ConnectedPage[]> {
+  const json = await graphGet("/me/accounts", {
+    fields: "id,name,access_token,instagram_business_account",
+    access_token: userAccessToken,
+  });
+  const pages = (json.data ?? []) as Array<{
+    id: string;
+    name: string;
+    access_token: string;
+    instagram_business_account?: { id: string };
+  }>;
+  return pages.map((p) => ({
+    pageId: p.id,
+    pageName: p.name,
+    pageAccessToken: p.access_token,
+    instagramBusinessAccountId: p.instagram_business_account?.id ?? null,
+  }));
+}
+
+// Turns the one-time code from Facebook's login redirect into the finished
+// list of Pages (and linked Instagram accounts) ready to save. This is the
+// single function the OAuth callback route needs to call.
+export async function resolvePagesFromOAuthCode(
+  code: string,
+  redirectUri: string,
+): Promise<ConnectedPage[]> {
+  const shortLivedToken = await exchangeCodeForUserToken(code, redirectUri);
+  const userToken = await exchangeForLongLivedUserToken(shortLivedToken);
+  return fetchConnectedPages(userToken);
+}
+
 export type EngagementMetrics = {
   likeCount: number | null;
   commentCount: number | null;
