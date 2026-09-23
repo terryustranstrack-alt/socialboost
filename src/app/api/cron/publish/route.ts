@@ -7,9 +7,10 @@ import type { Post, PostTarget, SocialAccount } from "@prisma/client";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// How many due posts to publish per cron invocation. Kept small and
-// sequential (not parallel) to stay comfortably under Meta Graph API rate
-// limits (PRD 7 "Kepatuhan rate limit Meta Graph API").
+// How many due posts to publish per cron run. Kept small, and one at a
+// time rather than all at once, so we don't send too many requests to
+// Instagram/Facebook too quickly (the PRD requires respecting their rate
+// limits).
 const BATCH_SIZE = 10;
 
 function isAuthorized(req: Request): boolean {

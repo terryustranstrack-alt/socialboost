@@ -1,9 +1,10 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
-// Social platform access tokens are the most sensitive data this app holds
-// (PRD section 7: "token disimpan terenkripsi"). We encrypt them with
-// AES-256-GCM before writing to SocialAccount.accessTokenCipher, using a key
-// that lives only in the deployment's environment variables (Vercel env /
+// Social platform access tokens are the most sensitive data this app holds,
+// so the PRD requires them to be stored encrypted, not as plain text. We
+// scramble them with a standard, well-tested encryption method (AES-256-GCM)
+// before saving to SocialAccount.accessTokenCipher, using a secret key that
+// only lives in the deployment's environment variables (Vercel env /
 // secret manager) — never in the database or source control.
 
 const ALGORITHM = "aes-256-gcm";
@@ -24,7 +25,9 @@ function getKey(): Buffer {
   return key;
 }
 
-// Stored format: base64(iv) . base64(authTag) . base64(ciphertext)
+// Each encrypted token is saved as three parts joined by dots: the random
+// value used to scramble it, the tag that proves it wasn't tampered with,
+// and the scrambled text itself.
 export function encryptToken(plaintext: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv(ALGORITHM, getKey(), iv);

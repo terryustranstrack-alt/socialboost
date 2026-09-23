@@ -34,6 +34,19 @@ async function graphFetch(path: string, params: Record<string, string>) {
   return json;
 }
 
+async function graphGet(path: string, params: Record<string, string>) {
+  const url = new URL(`${GRAPH_BASE}${path}`);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+  const res = await fetch(url.toString());
+  const json = await res.json();
+  if (!res.ok || json.error) {
+    throw json;
+  }
+  return json;
+}
+
 export type PublishInput = {
   /** IG business account id or FB page id */
   externalAccountId: string;
@@ -118,6 +131,54 @@ export async function publishToFacebook(
       access_token: input.accessToken,
     });
     return { platformPostId: result.post_id ?? (result.id as string) };
+  } catch (err) {
+    throw new MetaPublishError(extractErrorMessage(err), "FACEBOOK", err);
+  }
+}
+
+export type EngagementMetrics = {
+  likeCount: number | null;
+  commentCount: number | null;
+  shareCount: number | null;
+};
+
+// Only asks for data we already have permission to read. "Reach" and
+// "impressions" numbers need extra Meta permissions we haven't requested
+// yet, so they're left out here on purpose instead of failing every time
+// someone refreshes metrics. Adding them is planned for a later phase.
+export async function fetchInstagramMetrics(
+  mediaId: string,
+  accessToken: string,
+): Promise<EngagementMetrics> {
+  try {
+    const json = await graphGet(`/${mediaId}`, {
+      fields: "like_count,comments_count",
+      access_token: accessToken,
+    });
+    return {
+      likeCount: json.like_count ?? null,
+      commentCount: json.comments_count ?? null,
+      shareCount: null,
+    };
+  } catch (err) {
+    throw new MetaPublishError(extractErrorMessage(err), "INSTAGRAM", err);
+  }
+}
+
+export async function fetchFacebookMetrics(
+  postId: string,
+  accessToken: string,
+): Promise<EngagementMetrics> {
+  try {
+    const json = await graphGet(`/${postId}`, {
+      fields: "likes.summary(true),comments.summary(true),shares",
+      access_token: accessToken,
+    });
+    return {
+      likeCount: json.likes?.summary?.total_count ?? null,
+      commentCount: json.comments?.summary?.total_count ?? null,
+      shareCount: json.shares?.count ?? null,
+    };
   } catch (err) {
     throw new MetaPublishError(extractErrorMessage(err), "FACEBOOK", err);
   }

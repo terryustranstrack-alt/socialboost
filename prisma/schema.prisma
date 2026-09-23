@@ -188,6 +188,14 @@ model PostTarget {
   attempts        Int           @default(0)
   publishedAt     DateTime?
 
+  // Engagement snapshot from the last metrics refresh (PRD 6.2, Phase 2).
+  // Nullable: null means "not fetched yet", not "zero". IG shares and FB
+  // reach/impressions aren't populated in the MVP — see src/lib/meta.ts.
+  likeCount        Int?
+  commentCount     Int?
+  shareCount       Int?
+  metricsFetchedAt DateTime?
+
   post          Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
   socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
 

@@ -4,6 +4,7 @@ import { requireActiveBrand } from "@/lib/require-brand";
 import { hasRole, CAN_CREATE, CAN_APPROVE } from "@/lib/rbac";
 import StatusBadge from "@/components/status-badge";
 import PostActions from "@/components/post-actions";
+import RefreshMetricsButton from "@/components/refresh-metrics-button";
 
 export default async function PostDetailPage({
   params,
@@ -58,9 +59,36 @@ export default async function PostDetailPage({
               >
                 {t.platform} · {t.socialAccount.displayName} · {t.publishStatus}
                 {t.errorMessage ? `: ${t.errorMessage}` : ""}
+                {t.publishStatus === "SUCCESS" &&
+                  (t.likeCount !== null || t.commentCount !== null || t.shareCount !== null) && (
+                    <>
+                      {" · ❤ "}
+                      {t.likeCount ?? "–"}
+                      {" · 💬 "}
+                      {t.commentCount ?? "–"}
+                      {t.shareCount !== null && <> · ↗ {t.shareCount}</>}
+                    </>
+                  )}
               </span>
             ))}
           </div>
+          {post.status === "PUBLISHED" && (canCreate || isOwner) && (
+            <div className="mt-3 flex items-center gap-2">
+              <RefreshMetricsButton postId={post.id} />
+              {post.targets.some((t) => t.metricsFetchedAt) && (
+                <span className="text-xs text-slate-400">
+                  Last refreshed{" "}
+                  {new Date(
+                    Math.max(
+                      ...post.targets
+                        .filter((t) => t.metricsFetchedAt)
+                        .map((t) => t.metricsFetchedAt!.getTime()),
+                    ),
+                  ).toLocaleString()}
+                </span>
+              )}
+            </div>
+          )}
           <dl className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-500">
             <div>
               <dt className="font-medium text-slate-400">Created by</dt>

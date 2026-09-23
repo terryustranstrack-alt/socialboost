@@ -131,7 +131,13 @@ scope (no carousels/stories in the 3-day MVP).
 
 - Single image/video per post (no carousels), no content library / asset
   reuse yet (planned Phase 3)
-- No engagement analytics yet (status: published/failed only — Phase 2)
+- Engagement analytics (Phase 2) covers likes/comments (Instagram + Facebook)
+  and shares (Facebook only), refreshed on-demand via the "Refresh metrics"
+  button on a published post, or automatically once a day via
+  `/api/cron/metrics` for posts published in the last 30 days. Reach and
+  impressions aren't included — they need the `instagram_manage_insights`/
+  `read_insights` permissions, which aren't part of the app's current Meta
+  review scope
 - LinkedIn is modeled in the schema (`Platform.LINKEDIN`) but has no
   publish integration yet — pending Marketing Developer Platform approval
 - New team members are added directly in Settings with an admin-set initial

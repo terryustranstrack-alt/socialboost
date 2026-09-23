@@ -2,12 +2,15 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireActiveBrand } from "@/lib/require-brand";
 import { hasRole, CAN_CREATE, CAN_APPROVE } from "@/lib/rbac";
+import { daysAgo } from "@/lib/dates";
 import StatusBadge from "@/components/status-badge";
 
 export default async function DashboardPage() {
   const { brand, memberships } = await requireActiveBrand();
 
-  const [pendingApproval, scheduled, recentFailures, recentPosts] = await Promise.all([
+  const since30d = daysAgo(30);
+
+  const [pendingApproval, scheduled, recentFailures, recentPosts, engagement] = await Promise.all([
     prisma.post.count({ where: { brandId: brand.brandId, status: "PENDING_APPROVAL" } }),
     prisma.post.count({ where: { brandId: brand.brandId, status: "SCHEDULED" } }),
     prisma.post.count({ where: { brandId: brand.brandId, status: "FAILED" } }),
@@ -16,6 +19,14 @@ export default async function DashboardPage() {
       orderBy: { updatedAt: "desc" },
       take: 8,
       include: { targets: true, createdBy: true },
+    }),
+    prisma.postTarget.aggregate({
+      where: {
+        post: { brandId: brand.brandId },
+        publishStatus: "SUCCESS",
+        publishedAt: { gte: since30d },
+      },
+      _sum: { likeCount: true, commentCount: true, shareCount: true },
     }),
   ]);
 
@@ -51,6 +62,17 @@ export default async function DashboardPage() {
 
       <div className="rounded-lg border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-3">
+          <h2 className="text-sm font-medium text-slate-900">Engagement (last 30 days)</h2>
+        </div>
+        <div className="grid grid-cols-3 divide-x divide-slate-100">
+          <EngagementStat label="Likes" value={engagement._sum.likeCount} />
+          <EngagementStat label="Comments" value={engagement._sum.commentCount} />
+          <EngagementStat label="Shares" value={engagement._sum.shareCount} />
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 px-4 py-3">
           <h2 className="text-sm font-medium text-slate-900">Recent posts</h2>
         </div>
         <ul className="divide-y divide-slate-100">
@@ -71,6 +93,15 @@ export default async function DashboardPage() {
           ))}
         </ul>
       </div>
+    </div>
+  );
+}
+
+function EngagementStat({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="px-4 py-3 text-center">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-slate-900">{value ?? 0}</p>
     </div>
   );
 }

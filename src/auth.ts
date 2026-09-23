@@ -22,11 +22,10 @@ declare module "next-auth" {
   }
 }
 
-// We intentionally don't augment "next-auth/jwt" here: that module
-// re-exports @auth/core/jwt, whose .d.ts graph pulls in optional
-// peer-dependency types (nodemailer, @simplewebauthn/*) that aren't
-// installed, which breaks `declare module` resolution even under
-// skipLibCheck. Extending the token inline (below) avoids that path.
+// We deliberately don't hook into the "next-auth/jwt" package to add our
+// custom fields — doing that pulls in extra type packages we haven't
+// installed and breaks the build. Defining our own token type below (used
+// only inside this file) avoids that problem entirely.
 type AppJWT = {
   id?: string;
   memberships?: SessionMembership[];
