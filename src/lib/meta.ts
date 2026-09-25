@@ -208,27 +208,70 @@ export type ConnectedPage = {
   instagramBusinessAccountId: string | null;
 };
 
-// Lists every Facebook Page the person allowed us to see, plus which
-// Instagram account (if any) is linked to each one. Facebook's own login
-// screen is where the person actually picks which Pages to share — by the
-// time we call this, that choice has already been made.
-async function fetchConnectedPages(userAccessToken: string): Promise<ConnectedPage[]> {
-  const json = await graphGet("/me/accounts", {
-    fields: "id,name,access_token,instagram_business_account",
-    access_token: userAccessToken,
-  });
-  const pages = (json.data ?? []) as Array<{
-    id: string;
-    name: string;
-    access_token: string;
-    instagram_business_account?: { id: string };
-  }>;
-  return pages.map((p) => ({
+const PAGE_FIELDS = "id,name,access_token,instagram_business_account";
+
+type GraphPage = {
+  id: string;
+  name: string;
+  access_token: string;
+  instagram_business_account?: { id: string };
+};
+
+function toConnectedPage(p: GraphPage): ConnectedPage {
+  return {
     pageId: p.id,
     pageName: p.name,
     pageAccessToken: p.access_token,
     instagramBusinessAccountId: p.instagram_business_account?.id ?? null,
-  }));
+  };
+}
+
+// Asks Facebook for the list of Pages this person manages. Heads-up: Pages
+// owned through a company's Meta Business Suite account often DON'T show up
+// here, even when the person picked them on the login screen — see
+// fetchPickedPageIds below for how we still find those.
+async function fetchListedPages(userAccessToken: string): Promise<ConnectedPage[]> {
+  const json = await graphGet("/me/accounts", {
+    fields: PAGE_FIELDS,
+    access_token: userAccessToken,
+  });
+  return ((json.data ?? []) as GraphPage[]).map(toConnectedPage);
+}
+
+// Reads back exactly which Pages the person ticked on Facebook's login
+// screen. Facebook records this on the login token itself, so it works even
+// for company-owned Pages that the regular Page list leaves out.
+async function fetchPickedPageIds(userAccessToken: string): Promise<string[]> {
+  const json = await graphGet("/debug_token", {
+    input_token: userAccessToken,
+    access_token: `${requireMetaAppId()}|${requireMetaAppSecret()}`,
+  });
+  const scopes = (json.data?.granular_scopes ?? []) as Array<{
+    scope: string;
+    target_ids?: string[];
+  }>;
+  return scopes.find((s) => s.scope === "pages_show_list")?.target_ids ?? [];
+}
+
+// Looks up one Page by its ID, including the Page's own access token.
+async function fetchPageById(pageId: string, userAccessToken: string): Promise<ConnectedPage> {
+  const json = await graphGet(`/${pageId}`, {
+    fields: PAGE_FIELDS,
+    access_token: userAccessToken,
+  });
+  return toConnectedPage(json as GraphPage);
+}
+
+// Lists every Facebook Page the person allowed us to see, plus which
+// Instagram account (if any) is linked to each one. Combines Facebook's
+// regular Page list with the Pages picked on the login screen, so
+// company-owned Pages aren't missed.
+async function fetchConnectedPages(userAccessToken: string): Promise<ConnectedPage[]> {
+  const listed = await fetchListedPages(userAccessToken);
+  const pickedIds = await fetchPickedPageIds(userAccessToken);
+  const missingIds = pickedIds.filter((id) => !listed.some((p) => p.pageId === id));
+  const missing = await Promise.all(missingIds.map((id) => fetchPageById(id, userAccessToken)));
+  return [...listed, ...missing];
 }
 
 // Turns the one-time code from Facebook's login redirect into the finished
