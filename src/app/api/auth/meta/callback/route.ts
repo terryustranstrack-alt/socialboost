@@ -39,7 +39,14 @@ export async function GET(req: NextRequest) {
     const pages = await resolvePagesFromOAuthCode(code, redirectUri);
     await saveConnectedPages(brandId, pages);
     return goToSettingsWith({ connected: String(pages.length) });
-  } catch {
+  } catch (err) {
+    // Record what actually went wrong in the server logs, so a failed
+    // connection can be diagnosed. Facebook's error replies contain a
+    // message and code, never an access token.
+    console.error(
+      "Connect with Facebook failed:",
+      err instanceof Error ? err.stack ?? err.message : JSON.stringify(err),
+    );
     return goToSettingsWith({ error: "meta_error" });
   }
 }
