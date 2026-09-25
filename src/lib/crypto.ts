@@ -60,3 +60,12 @@ export function decryptToken(stored: string): string {
   ]);
   return plaintext.toString("utf8");
 }
+
+// What we save in place of an access token when an account is disconnected.
+// It isn't a real encrypted token, so any attempt to use it simply fails.
+export const DISCONNECTED_TOKEN = "";
+
+// True when an account has been disconnected (its access token was erased).
+export function isDisconnectedToken(stored: string): boolean {
+  return stored === DISCONNECTED_TOKEN;
+}

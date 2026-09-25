@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveBrand } from "@/lib/require-brand";
 import { hasRole, CAN_MANAGE_BRAND } from "@/lib/rbac";
 import { connectSocialAccount, toggleSocialAccount } from "@/app/actions/accounts";
+import { isDisconnectedToken } from "@/lib/crypto";
+import DisconnectAccountButton from "@/components/disconnect-account-button";
 
 export default async function ConnectedAccountsPage({
   searchParams,
@@ -45,21 +47,33 @@ export default async function ConnectedAccountsPage({
                 </p>
                 <p className="text-xs text-slate-500">ID: {a.externalAccountId}</p>
               </div>
-              <form
-                action={async () => {
-                  "use server";
-                  await toggleSocialAccount(a.id, !a.isActive);
-                }}
-              >
-                <button
-                  type="submit"
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${
-                    a.isActive ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  {a.isActive ? "Active" : "Inactive"}
-                </button>
-              </form>
+              {isDisconnectedToken(a.accessTokenCipher) ? (
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
+                  Disconnected
+                </span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <form
+                    action={async () => {
+                      "use server";
+                      await toggleSocialAccount(a.id, !a.isActive);
+                    }}
+                  >
+                    <button
+                      type="submit"
+                      className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        a.isActive ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {a.isActive ? "Active" : "Inactive"}
+                    </button>
+                  </form>
+                  <DisconnectAccountButton
+                    accountId={a.id}
+                    accountName={`${a.platform} — ${a.displayName}`}
+                  />
+                </div>
+              )}
             </li>
           ))}
           {accounts.length === 0 && (
