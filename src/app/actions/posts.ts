@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { put } from "@vercel/blob";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { requireRole, CAN_CREATE, CAN_APPROVE } from "@/lib/rbac";
@@ -12,20 +11,6 @@ async function requireSession() {
   const session = await auth();
   if (!session) throw new Error("UNAUTHENTICATED");
   return session;
-}
-
-export async function uploadMedia(formData: FormData) {
-  const session = await requireSession();
-  const file = formData.get("file");
-  if (!(file instanceof File)) throw new Error("No file provided");
-
-  const type: MediaType = file.type.startsWith("video/") ? "VIDEO" : "IMAGE";
-  const blob = await put(`posts/${session.user.id}/${Date.now()}-${file.name}`, file, {
-    access: "public",
-    addRandomSuffix: true,
-  });
-
-  return { url: blob.url, type };
 }
 
 export async function createPost(formData: FormData) {

@@ -1,8 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { createPost, uploadMedia } from "@/app/actions/posts";
+import { upload } from "@vercel/blob/client";
+import { createPost } from "@/app/actions/posts";
 import type { MediaType, Platform } from "@prisma/client";
+
+// Same limits as src/app/api/media/upload/route.ts — the biggest files
+// Instagram accepts. Checked here too so people get a clear message right
+// away instead of waiting for a large upload to be refused.
+const MAX_IMAGE_MB = 8;
+const MAX_VIDEO_MB = 300;
+
+// Files bigger than this are sent in several pieces at once, which is
+// faster and more reliable for large videos.
+const MULTIPART_THRESHOLD_BYTES = 50 * 1024 * 1024;
+
+// Returns a plain-language message if the file is too big, or null if it's fine.
+function checkFileSize(sizeInBytes: number, type: MediaType): string | null {
+  const limitMb = type === "VIDEO" ? MAX_VIDEO_MB : MAX_IMAGE_MB;
+  if (sizeInBytes <= limitMb * 1024 * 1024) return null;
+  const kind = type === "VIDEO" ? "Videos" : "Images";
+  return `${kind} can be up to ${limitMb} MB — this one is ${(sizeInBytes / 1024 / 1024).toFixed(1)} MB.`;
+}
 
 type SocialAccountOption = {
   id: string;
@@ -34,13 +53,25 @@ export default function PostComposer({
     if (!file) return;
     setUploading(true);
     setUploadError(null);
+    const type: MediaType = file.type.startsWith("video/") ? "VIDEO" : "IMAGE";
+    const tooBigMessage = checkFileSize(file.size, type);
+    if (tooBigMessage) {
+      setUploadError(tooBigMessage);
+      setUploading(false);
+      return;
+    }
     try {
-      const formData = new FormData();
-      formData.set("file", file);
-      const result = await uploadMedia(formData);
-      setMedia(result);
+      // Sends the file straight from the browser to our file storage — see
+      // src/app/api/media/upload/route.ts for why.
+      const blob = await upload(`posts/${Date.now()}-${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/media/upload",
+        clientPayload: type,
+        multipart: file.size > MULTIPART_THRESHOLD_BYTES,
+      });
+      setMedia({ url: blob.url, type });
     } catch {
-      setUploadError("Upload failed. Try a smaller image/video.");
+      setUploadError("Upload failed. Please check your connection and try again.");
     } finally {
       setUploading(false);
     }
@@ -89,6 +120,9 @@ export default function PostComposer({
             onChange={handleFileChange}
             className="mt-1 block w-full text-sm"
           />
+          <p className="mt-1 text-xs text-slate-500">
+            Images up to {MAX_IMAGE_MB} MB, videos up to {MAX_VIDEO_MB} MB.
+          </p>
           {uploading && <p className="mt-1 text-xs text-slate-500">Uploading…</p>}
           {uploadError && <p className="mt-1 text-xs text-red-600">{uploadError}</p>}
         </div>
